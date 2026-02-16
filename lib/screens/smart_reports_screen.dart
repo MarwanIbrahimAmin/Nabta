@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../l10n/app_ar.dart';
+import '../models/soil_analysis_response.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
 
@@ -20,17 +20,28 @@ class SmartReportsScreen extends StatefulWidget {
 
 class _SmartReportsScreenState extends State<SmartReportsScreen> {
   _AnalysisState _state = _AnalysisState.idle;
-  String _analysisResult = '';
+  SoilAnalysisResponse? _analysisResult;
   String _errorMessage = '';
+
   final TextEditingController _plantNameController = TextEditingController(
     text: 'Wheat',
   );
   final FocusNode _plantNameFocusNode = FocusNode();
 
+  final TextEditingController _areaController = TextEditingController();
+  final FocusNode _areaFocusNode = FocusNode();
+
+  final TextEditingController _previousCropController = TextEditingController();
+  final FocusNode _previousCropFocusNode = FocusNode();
+
   @override
   void dispose() {
     _plantNameController.dispose();
     _plantNameFocusNode.dispose();
+    _areaController.dispose();
+    _areaFocusNode.dispose();
+    _previousCropController.dispose();
+    _previousCropFocusNode.dispose();
     super.dispose();
   }
 
@@ -38,6 +49,14 @@ class _SmartReportsScreenState extends State<SmartReportsScreen> {
     final plantName = _plantNameController.text.trim().isNotEmpty
         ? _plantNameController.text.trim()
         : 'Wheat';
+
+    final area = _areaController.text.trim().isNotEmpty
+        ? _areaController.text.trim()
+        : null;
+
+    final previousCrop = _previousCropController.text.trim().isNotEmpty
+        ? _previousCropController.text.trim()
+        : null;
 
     final picker = ImagePicker();
     final source = await showModalBottomSheet<ImageSource>(
@@ -88,13 +107,15 @@ class _SmartReportsScreenState extends State<SmartReportsScreen> {
     setState(() {
       _state = _AnalysisState.loading;
       _errorMessage = '';
-      _analysisResult = '';
+      _analysisResult = null;
     });
 
     try {
       final result = await ApiService.analyzeSoilReport(
         imageFile: file,
         plantName: plantName,
+        area: area,
+        previousCrop: previousCrop,
       );
       if (mounted) {
         setState(() {
@@ -128,7 +149,7 @@ class _SmartReportsScreenState extends State<SmartReportsScreen> {
     setState(() {
       _state = _AnalysisState.idle;
       _errorMessage = '';
-      _analysisResult = '';
+      _analysisResult = null;
     });
   }
 
@@ -148,13 +169,18 @@ class _SmartReportsScreenState extends State<SmartReportsScreen> {
                   if (_state == _AnalysisState.idle ||
                       _state == _AnalysisState.loading) ...[
                     _buildPlantNameField(context),
+                    const SizedBox(height: 12),
+                    _buildAreaField(context),
+                    const SizedBox(height: 12),
+                    _buildPreviousCropField(context),
                     const SizedBox(height: 20),
                   ],
                   if (_state == _AnalysisState.idle) _buildPlaceholderCard(context),
                   if (_state == _AnalysisState.loading)
                     _buildLoadingPlaceholder(context),
-                  if (_state == _AnalysisState.success)
-                    _buildAnalysisResultCard(context),
+                  if (_state == _AnalysisState.success &&
+                      _analysisResult != null)
+                    _buildAnalysisResultSection(context, _analysisResult!),
                   if (_state == _AnalysisState.error) _buildErrorCard(context),
                 ],
               ),
@@ -208,35 +234,139 @@ class _SmartReportsScreenState extends State<SmartReportsScreen> {
               ),
         ),
         const SizedBox(height: 8),
-        TextField(
-          controller: _plantNameController,
-          focusNode: _plantNameFocusNode,
-          enabled: _state != _AnalysisState.loading,
-          decoration: InputDecoration(
-            hintText: AppAr.plantNameExample,
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.agriGreen.withOpacity(0.3)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.agriGreen.withOpacity(0.5)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(
-                color: AppColors.agriGreen,
-                width: 2,
+        Directionality(
+          textDirection: TextDirection.rtl,
+          child: TextField(
+            controller: _plantNameController,
+            focusNode: _plantNameFocusNode,
+            enabled: _state != _AnalysisState.loading,
+            decoration: InputDecoration(
+              hintText: AppAr.plantNameExample,
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide:
+                    BorderSide(color: AppColors.agriGreen.withOpacity(0.3)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide:
+                    BorderSide(color: AppColors.agriGreen.withOpacity(0.5)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(
+                  color: AppColors.agriGreen,
+                  width: 2,
+                ),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 16,
               ),
             ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 16,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAreaField(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          AppAr.areaHint,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+        ),
+        const SizedBox(height: 8),
+        Directionality(
+          textDirection: TextDirection.rtl,
+          child: TextField(
+            controller: _areaController,
+            focusNode: _areaFocusNode,
+            enabled: _state != _AnalysisState.loading,
+            decoration: InputDecoration(
+              hintText: AppAr.areaExample,
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide:
+                    BorderSide(color: AppColors.agriGreen.withOpacity(0.3)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide:
+                    BorderSide(color: AppColors.agriGreen.withOpacity(0.5)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(
+                  color: AppColors.agriGreen,
+                  width: 2,
+                ),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 16,
+              ),
             ),
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPreviousCropField(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          AppAr.previousCropHint,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+        ),
+        const SizedBox(height: 8),
+        Directionality(
           textDirection: TextDirection.rtl,
+          child: TextField(
+            controller: _previousCropController,
+            focusNode: _previousCropFocusNode,
+            enabled: _state != _AnalysisState.loading,
+            decoration: InputDecoration(
+              hintText: AppAr.previousCropExample,
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide:
+                    BorderSide(color: AppColors.agriGreen.withOpacity(0.3)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide:
+                    BorderSide(color: AppColors.agriGreen.withOpacity(0.5)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(
+                  color: AppColors.agriGreen,
+                  width: 2,
+                ),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 16,
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -321,93 +451,101 @@ class _SmartReportsScreenState extends State<SmartReportsScreen> {
     );
   }
 
-  Widget _buildAnalysisResultCard(BuildContext context) {
+  Widget _buildAnalysisResultSection(
+    BuildContext context,
+    SoilAnalysisResponse result,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildResultCard(
+          context,
+          icon: LucideIcons.stethoscope,
+          title: AppAr.diagnosisTitle,
+          body: result.diagnosis,
+          accentColor: AppColors.agriGreen,
+        ),
+        const SizedBox(height: 16),
+        _buildResultCard(
+          context,
+          icon: LucideIcons.checkCircle2,
+          title: AppAr.recommendationsTitle,
+          body: result.recommendations,
+          accentColor: AppColors.agriGreen,
+        ),
+        const SizedBox(height: 16),
+        _buildResultCard(
+          context,
+          icon: LucideIcons.brain,
+          title: AppAr.smartInsightsTitle,
+          body: result.smartInsights,
+          accentColor: AppColors.agriGreen,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResultCard(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String body,
+    required Color accentColor,
+  }) {
     final theme = Theme.of(context);
 
     return Container(
       width: double.infinity,
-      constraints: const BoxConstraints(minHeight: 240),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            AppColors.agriGreen.withOpacity(0.12),
-            AppColors.agriGreen.withOpacity(0.04),
+            accentColor.withOpacity(0.10),
+            accentColor.withOpacity(0.03),
           ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
         ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.agriGreen.withOpacity(0.25)),
+        border: Border.all(color: accentColor.withOpacity(0.25)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.agriGreen.withOpacity(0.08),
+            color: accentColor.withOpacity(0.08),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(LucideIcons.sparkles, size: 22, color: AppColors.agriGreen),
-              const SizedBox(width: 8),
-              Text(
-                AppAr.aiTreatmentPlanTitle,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.onSurface,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SingleChildScrollView(
-            child: Directionality(
-                textDirection: TextDirection.rtl,
-                child: MarkdownBody(
-                  data: _analysisResult,
-                  selectable: true,
-                  styleSheet: MarkdownStyleSheet(
-                    p: theme.textTheme.bodyLarge?.copyWith(
-                      color: theme.colorScheme.onSurface,
-                      height: 1.6,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    h1: theme.textTheme.headlineSmall?.copyWith(
-                      color: AppColors.agriGreen,
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 22, color: accentColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
-                    ),
-                    h2: theme.textTheme.titleMedium?.copyWith(
-                      color: AppColors.agriGreen,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    h3: theme.textTheme.titleSmall?.copyWith(
                       color: theme.colorScheme.onSurface,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    listBullet: theme.textTheme.bodyLarge?.copyWith(
-                      color: theme.colorScheme.onSurface,
-                    ),
-                    blockquote: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontStyle: FontStyle.italic,
-                    ),
-                    blockquoteDecoration: BoxDecoration(
-                      border: Border(
-                        left: BorderSide(
-                          color: AppColors.agriGreen,
-                          width: 4,
-                        ),
-                      ),
                     ),
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              body,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface,
+                height: 1.6,
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }

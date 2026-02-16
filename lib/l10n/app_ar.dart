@@ -66,6 +66,20 @@ class AppAr {
 
   static const String pickImageFailed = 'فشل في اختيار الصورة';
 
+  static const String areaHint = 'مساحة الأرض (اختياري)';
+
+  static const String areaExample = 'مثال: ٢ فدان، ٥ هكتار';
+
+  static const String previousCropHint = 'المحصول السابق (اختياري)';
+
+  static const String previousCropExample = 'مثال: برسيم، قمح، ذرة';
+
+  static const String diagnosisTitle = 'تشخيص التربة';
+
+  static const String recommendationsTitle = 'التوصيات العملية';
+
+  static const String smartInsightsTitle = 'رؤى ذكية إضافية';
+
   // ─── Timeline ─────────────────────────────────────────────────────────────
 
   static const String subscriptionBadgeLabel = 'الاشتراك مفعّل';
