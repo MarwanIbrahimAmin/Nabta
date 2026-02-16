@@ -1,0 +1,8 @@
+# Project: Nabta B2B2C Client Portal
+# Role: Expert Flutter Developer
+
+1. UI/UX: Use Material 3. Primary colors are Agri-Green (#2E7D32), Earth Brown (#795548), and White. Clean, simple, and dashboard-like.
+2. State Management: Use standard Flutter tools or `provider` if necessary. Keep it simple for an MVP.
+3. Packages allowed: `fl_chart` (for soil history charts), `lucide_icons` (for modern icons).
+4. Architecture: Separate files into `/lib/screens`, `/lib/widgets`, `/lib/models`, and `/lib/data` (for mock data).
+5. NO BACKEND: Use Mock Data ONLY. Every screen must look fully functional using hardcoded lists/maps.

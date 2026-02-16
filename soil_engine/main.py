@@ -1,0 +1,151 @@
+"""
+Smart Soil Intelligence Platform – FastAPI entrypoint.
+POST /analyze-soil: receives lab data, returns AI-enhanced report + validation layer.
+"""
+import logging
+from typing import Any
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
+from ai_engine import analyze_soil_with_ai
+from config import GOOGLE_API_KEY, require_google_api_key
+from database import is_db_configured, save_soil_test
+from models import (
+    AIAnalysisResponse,
+    AnalyzeSoilResponse,
+    NPKValidationResult,
+    SoilLabInput,
+)
+from npk_logic import calculate_npk_requirements
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="Smart Soil Intelligence Platform",
+    description="Transforms raw soil lab data into actionable insights and fertilizer prescriptions.",
+    version="1.0.0",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+def _lab_input_to_dict(inp: SoilLabInput) -> dict[str, Any]:
+    """Convert Pydantic model to dict for AI and DB (snake_case keys for JSON)."""
+    d: dict[str, Any] = {}
+    if inp.N_ppm is not None:
+        d["N_ppm"] = inp.N_ppm
+    if inp.P_ppm is not None:
+        d["P_ppm"] = inp.P_ppm
+    if inp.K_ppm is not None:
+        d["K_ppm"] = inp.K_ppm
+    if inp.pH is not None:
+        d["pH"] = inp.pH
+    if inp.EC_dS_m is not None:
+        d["EC_dS_m"] = inp.EC_dS_m
+    if inp.organic_matter_pct is not None:
+        d["organic_matter_pct"] = inp.organic_matter_pct
+    if inp.crop_type is not None:
+        d["crop_type"] = inp.crop_type
+    if inp.test_date is not None:
+        d["test_date"] = str(inp.test_date)
+    if inp.lab_reference is not None:
+        d["lab_reference"] = inp.lab_reference
+    if inp.location is not None:
+        d["location"] = {"lat": inp.location.lat, "long": inp.location.long}
+    return d
+
+
+def _ai_report_to_dict(report: AIAnalysisResponse) -> dict[str, Any]:
+    """Serialize AI report for DB and response."""
+    return {
+        "soil_status_summary": report.soil_status_summary,
+        "specific_fertilizer_steps": [
+            s.model_dump() for s in report.specific_fertilizer_steps
+        ],
+        "warnings": report.warnings,
+        "next_test_date": report.next_test_date,
+        "strategic_insight": report.strategic_insight,
+    }
+
+
+@app.get("/health")
+def health():
+    """Health check; confirms API key is set (does not call Gemini)."""
+    try:
+        require_google_api_key()
+        return {"status": "ok", "ai_configured": True, "database": is_db_configured()}
+    except ValueError:
+        return {"status": "ok", "ai_configured": False, "database": is_db_configured()}
+
+
+@app.post("/analyze-soil", response_model=AnalyzeSoilResponse)
+async def analyze_soil(payload: SoilLabInput) -> AnalyzeSoilResponse:
+    """
+    Accepts soil lab data (N, P, K, pH, EC, organic matter) and optional crop/farm/location.
+    Returns human-friendly analysis, precise fertilizer steps, warnings, next test date,
+    and a validation layer (manual N-P-K calculation).
+    """
+    lab_dict = _lab_input_to_dict(payload)
+    if not lab_dict:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide at least one of: N_ppm, P_ppm, K_ppm, pH, EC_dS_m, organic_matter_pct",
+        )
+
+    validation_npk: NPKValidationResult | None = None
+    try:
+        validation_npk = calculate_npk_requirements(payload)
+    except Exception as e:
+        logger.warning("Validation NPK calculation failed: %s", e)
+
+    try:
+        ai_report = analyze_soil_with_ai(lab_dict, payload.crop_type)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        logger.exception("Gemini API error")
+        raise HTTPException(status_code=502, detail=f"AI service error: {e}") from e
+
+    ai_dict = _ai_report_to_dict(ai_report)
+    if is_db_configured() and payload.farm_id:
+        try:
+            lat = payload.location.lat if payload.location else None
+            long_ = payload.location.long if payload.location else None
+            await save_soil_test(
+                farm_id=payload.farm_id,
+                lab_data=lab_dict,
+                ai_report=ai_dict,
+                validation_npk=validation_npk.model_dump() if validation_npk else None,
+                test_date=payload.test_date,
+                location_lat=lat,
+                location_long=long_,
+                lab_reference=payload.lab_reference,
+                crop_type=payload.crop_type,
+            )
+        except Exception as e:
+            logger.warning("Failed to persist soil test: %s", e)
+
+    location_out: dict[str, Any] | None = None
+    if payload.location:
+        location_out = {"lat": payload.location.lat, "long": payload.location.long}
+
+    return AnalyzeSoilResponse(
+        success=True,
+        ai_report=ai_report,
+        validation_npk=validation_npk,
+        farm_id=payload.farm_id,
+        location=location_out,
+        test_date=str(payload.test_date) if payload.test_date else None,
+    )
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
